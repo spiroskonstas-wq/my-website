@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Currency Expense Tracker (CAD)</title>
+
+  <!-- Excel Export Library -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body { font-family: Arial; padding: 20px; max-width: 1000px; margin: auto; }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 25px;
+    }
+
+    .header img {
+      max-width: 150px;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f4f4f4; }
+
+    input, select {
+      padding: 6px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+
+    button {
+      padding: 6px 12px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+
+    .totals {
+      font-weight: bold;
+      font-size: 18px;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="header">
+  <img src="https://www.flyingtigerssurplus.com/product-images/xxlg/P7775.jpg" alt="Logo">
+  <h2>Multi-Currency Expense Tracker (CAD)</h2>
+</div>
+
+<input type="text" id="trip" placeholder="Trip Number">
+<input type="text" id="desc" placeholder="Description">
+<input type="number" id="amount" placeholder="Amount" step="0.01">
+
+<select id="currency">
+  <option value="CAD">CAD</option> 
+  <option value="USD">USD</option>
+  <option value="EUR">EUR</option>
+  <option value="GBP">GBP</option>
+  <option value="MXN">MXN</option>
+  <option value="CZK">CZK</option>
+  <option value="JPY">JPY</option>
+  <option value="AUD">AUD</option>
+  <option value="CHF">CHF</option>
+  <option value="INR">INR</option>
+
+</select>
+
+<br>
+
+<!-- NEW: Number of Days Input -->
+<input type="number" id="days" placeholder="Number of Days" min="0" oninput="updateDaysTotal()">
+
+<br>
+
+<button onclick="addExpense()">Add Expense</button>
+<button onclick="exportToExcel()">Export to Excel</button>
+
+<table>
+  <thead>
+    <tr>
+      <th>Trip #</th>
+      <th>Description</th>
+      <th>Amount</th>
+      <th>Currency</th>
+      <th>Amount in CAD</th>
+    </tr>
+  </thead>
+  <tbody id="expenseTable"></tbody>
+</table>
+
+<div class="totals" id="totalExpenses">Total Expenses in CAD: $0.00</div>
+<div class="totals" id="daysTotal">Days Total (800 CAD/day): $0.00</div>
+<div class="totals" id="grandTotal">Grand Total in CAD: $0.00</div>
+
+<script>
+let totalCAD = 0;
+let totalDaysCAD = 0;
+
+async function addExpense() {
+  const trip = document.getElementById("trip").value.trim();
+  const desc = document.getElementById("desc").value.trim();
+  const amount = parseFloat(document.getElementById("amount").value);
+  const currency = document.getElementById("currency").value;
+
+  if (!trip || !desc || isNaN(amount)) {
+    alert("Please enter trip number, description, and valid amount.");
+    return;
+  }
+
+  let rate = 1;
+
+  try {
+    if (currency !== "CAD") {
+      const response = await fetch(`https://open.er-api.com/v6/latest/${currency}`);
+      const data = await response.json();
+
+      if (data.result === "success" && data.rates["CAD"]) {
+        rate = data.rates["CAD"];
+      } else {
+        throw new Error("Exchange rate unavailable.");
+      }
+    }
+
+    const amountCAD = amount * rate;
+    totalCAD += amountCAD;
+
+    const row = `
+      <tr>
+        <td>${trip}</td>
+        <td>${desc}</td>
+        <td>${amount.toFixed(2)}</td>
+        <td>${currency}</td>
+        <td>${amountCAD.toFixed(2)}</td>
+      </tr>
+    `;
+
+    document.getElementById("expenseTable").innerHTML += row;
+
+    document.getElementById("totalExpenses").innerText =
+      "Total Expenses in CAD: $" + totalCAD.toFixed(2);
+
+    updateGrandTotal();
+
+    document.getElementById("desc").value = "";
+    document.getElementById("amount").value = "";
+
+  } catch (error) {
+    alert("Could not fetch exchange rate. Please check your internet connection.");
+  }
+}
+
+function updateDaysTotal() {
+  const days = parseFloat(document.getElementById("days").value) || 0;
+  totalDaysCAD = days * 800;
+
+  document.getElementById("daysTotal").innerText =
+    "Days Total (800 CAD/day): $" + totalDaysCAD.toFixed(2);
+
+  updateGrandTotal();
+}
+
+function updateGrandTotal() {
+  const grandTotal = totalCAD + totalDaysCAD;
+
+  document.getElementById("grandTotal").innerText =
+    "Grand Total in CAD: $" + grandTotal.toFixed(2);
+}
+
+function exportToExcel() {
+  const rows = document.querySelectorAll("#expenseTable tr");
+
+  let data = [
+    ["Trip #", "Description", "Amount", "Currency", "Amount in CAD"]
+  ];
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll("td");
+    let rowData = [];
+    cells.forEach(cell => rowData.push(cell.innerText));
+    data.push(rowData);
+  });
+
+  data.push([]);
+  data.push(["", "", "", "Total Expenses in CAD", totalCAD.toFixed(2)]);
+  data.push(["", "", "", "Days Total (800 CAD/day)", totalDaysCAD.toFixed(2)]);
+  data.push(["", "", "", "Grand Total in CAD", (totalCAD + totalDaysCAD).toFixed(2)]);
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Expenses");
+
+  XLSX.writeFile(workbook, "Expenses.xlsx");
+}
+</script>
+
+</body>
+</html>
